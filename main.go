@@ -61,7 +61,7 @@ func mainWithErr() error {
 	options := &nationalrail.FetchOptions{Rows: departures}
 
 	if optRows != nil {
-		options.Rows, departures = *optRows, *optRows
+		options.Rows, departures = *optRows, *optRows*len(stations)
 	}
 	if optOffset != nil {
 		options.TimeOffset = *optOffset
