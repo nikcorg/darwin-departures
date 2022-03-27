@@ -116,7 +116,7 @@ func mainWithErr() error {
 
 	if len(results) == 0 {
 		if *jsonOut {
-			fmt.Println("[]")
+			return jsonOutput([]Departure{})
 		} else {
 			fmt.Println("no departures")
 		}
