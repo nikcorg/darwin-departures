@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,8 +16,13 @@ import (
 )
 
 type Departure struct {
-	SortBy    int
-	Departure string
+	SortBy      int    `json:"-"`
+	Departure   string `json:"-"`
+	Destination string `json:"dst"`
+	Due         string `json:"due"`
+	Etd         string `json:"etd"`
+	Platform    string `json:"pla"`
+	Station     string `json:"sta"`
 }
 
 var (
@@ -25,21 +31,25 @@ var (
 
 	DarwinToken = ""
 
-	optRows   = flag.Int("num", 10, "number of results to fetch (maximum)")
+	optRows   = flag.Int("num", 10, "number of results to fetch per station")
 	optOffset = flag.Int("offset", 0, "amount to offset current time in minutes (-120 to 120)")
 	optWindow = flag.Int("window", 0, "width of window to query in minutes, (1 to 120)")
+	jsonOut   = flag.Bool("json", false, "json output")
+	stations  []string
 )
 
 func main() {
 	flag.Parse()
 
-	if err := mainWithErr(flag.Args()); err != nil {
+	stations = flag.Args()
+
+	if err := mainWithErr(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainWithErr(stations []string) error {
+func mainWithErr() error {
 	if len(stations) == 0 {
 		return ErrNoStations
 	} else if DarwinToken == "" {
@@ -88,8 +98,15 @@ func mainWithErr(stations []string) error {
 			}
 
 			results = append(results,
-				Departure{hh*60 + mm, fmt.Sprintf("%s %s %-20s %3s %9s", s.Std, stationCode, s.Destination.Location.LocationName, s.Platform, s.Etd)},
-			)
+				Departure{
+					SortBy:      hh*60 + mm,
+					Departure:   fmt.Sprintf("%s %s %-20s %3s %9s", s.Std, stationCode, s.Destination.Location.LocationName, s.Platform, s.Etd),
+					Due:         s.Std,
+					Platform:    s.Platform,
+					Etd:         s.Etd,
+					Destination: s.Destination.Location.LocationName,
+					Station:     stationCode,
+				})
 		}
 	}
 
@@ -98,7 +115,11 @@ func mainWithErr(stations []string) error {
 	})
 
 	if len(results) == 0 {
-		fmt.Println("no departures")
+		if *jsonOut {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("no departures")
+		}
 		return nil
 	}
 
@@ -106,10 +127,49 @@ func mainWithErr(stations []string) error {
 		departures = len(results)
 	}
 
+	if *jsonOut {
+		return jsonOutput(results[0:departures])
+	}
+
+	plainTextOutput(results[0:departures])
+
+	return nil
+}
+
+func plainTextOutput(departures []Departure) {
 	fmt.Printf("%-5s %s %-20s %3s %9s\n", "When", "Sta", "To", "Plt", "Expected")
-	for _, d := range results[0:departures] {
+	for _, d := range departures {
 		fmt.Println(d.Departure)
 	}
+}
+
+func jsonOutput(departures []Departure) error {
+	page := struct {
+		Offset     int            `json:"offset"`
+		Stations   map[string]int `json:"stations"`
+		Departures []Departure    `json:"departures"`
+		UpdatedAt  time.Time      `json:"updatedAt"`
+	}{
+		Offset:     *optOffset,
+		Stations:   map[string]int{},
+		Departures: departures,
+		UpdatedAt:  time.Now().UTC(),
+	}
+
+	for _, s := range stations {
+		page.Stations[s] = 0
+	}
+
+	for _, d := range departures {
+		page.Stations[d.Station]++
+	}
+
+	j, err := json.Marshal(page)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(j))
 
 	return nil
 }
