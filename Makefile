@@ -3,4 +3,6 @@ BIN_NAME := departures
 
 .PHONY: build
 build:
-	mkdir -p bin && gotip build -ldflags="$(LD_FLAGS)" -o bin/$(BIN_NAME)
+	mkdir -p bin && go build -ldflags="$(LD_FLAGS)" -o bin/$(BIN_NAME)
+	mkdir -p bin && GOOS=linux go build -ldflags="$(LD_FLAGS)" -o bin/$(BIN_NAME)-linux
+
