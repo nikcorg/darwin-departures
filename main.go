@@ -38,6 +38,12 @@ var (
 	stations  []string
 )
 
+func init() {
+	if token, ok := os.LookupEnv("DARWIN_TOKEN"); ok {
+		DarwinToken = token
+	}
+}
+
 func main() {
 	flag.Parse()
 
