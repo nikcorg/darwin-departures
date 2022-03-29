@@ -154,12 +154,12 @@ func jsonOutput(departures []Departure) error {
 		Offset     int            `json:"offset"`
 		Stations   map[string]int `json:"stations"`
 		Departures []Departure    `json:"departures"`
-		UpdatedAt  time.Time      `json:"updatedAt"`
+		UpdatedAt  string         `json:"updatedAt"`
 	}{
 		Offset:     *optOffset,
 		Stations:   map[string]int{},
 		Departures: departures,
-		UpdatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
 
 	for _, s := range stations {
