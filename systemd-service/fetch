@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+set -eu
+
+pidfile="/var/run/$(basename "$0").pid"
+
+fetch_cmd="departures-linux-arm5 -json"
+fetch_opts="-offset 15 FOH CTF CFB"
+
+output="/var/www/html/departures.json"
+owneru="www-data"
+ownerg="www-data"
+
+margin=5
+slow_cycle=60
+rapid_cycle=15
+
+if [[ -f /etc/fetch.conf ]]; then
+	# shellcheck disable=SC1091
+	source /etc/fetch.conf
+fi
+
+set -- "$fetch_cmd" "$fetch_opts"
+fetch_cmd="$*"
+
+# early exit if fetch is already running
+if [[ -s "$pidfile" ]] && ps -p "$(cat "$pidfile")" >/dev/null; then
+	echo "[$(basename "$0")] (pid=$$) exiting, service already running on pid=$(cat "$pidfile")" >&2
+	exit 0
+fi
+
+echo $$ > "$pidfile"
+
+cleanup() {
+	{
+		if [[ -n "$(jobs -p)" ]]; then
+			# shellcheck disable=SC2046
+			kill $(jobs -p)
+		fi
+
+		rm -f "$pidfile"
+	} >/dev/null 2>&1
+
+	exit 0
+}
+
+trap cleanup EXIT ERR SIGINT SIGTERM
+
+fetch_update() {
+	eval "$fetch_cmd"
+}
+
+touch "$output"
+chown "$owneru":"$ownerg" "$output"
+
+{
+	prevtmp="$(mktemp)"
+	tmpfile="$(mktemp)"
+	backoff_increment=5
+	slow_cycle_backoff=0
+	errors=0
+
+	while :
+	do
+		if ! fetch_update > "$tmpfile"; then
+			errors=$(( errors + 1 ))
+			sleep 2
+			continue
+		fi
+
+		if (( errors > 0 )); then
+			echo "[$(basename "$0")] recovered after $errors failed update(s)" >&2
+			errors=0
+		fi
+
+		updated_at="$(date -uIseconds)"
+		now="$(date +"%s")"
+
+		# if the `etd` properties contain only "on time" or "cancelled" we do the slow cycle
+		if ! jq -r ".departures[].etd" "$output" | grep -vsqiE "(on time|cancelled)"; then
+			next_update="$(date -uIseconds --date="@$(( now + slow_cycle + slow_cycle_backoff + margin ))")"
+			jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
+			sleep $(( slow_cycle + slow_cycle_backoff ))
+		else
+			next_update="$(date -uIseconds --date="@$(( now + rapid_cycle + margin ))")"
+			jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
+			sleep "$rapid_cycle"
+		fi
+
+		# slow down if nothing is happening
+		if [[ "$(md5sum "$tmpfile" | awk '{ print $1 }')" == "$(md5sum "$prevtmp" | awk '{ print $1 }')" ]]; then
+			# max out at `2 * slow_cycle`
+			if (( slow_cycle_backoff < slow_cycle * 2 )); then
+				slow_cycle_backoff=$(( slow_cycle_backoff + backoff_increment ))
+				backoff_increment=$(( backoff_increment * 2 ))
+			fi
+		else
+			backoff_increment=5
+			slow_cycle_backoff=0
+		fi
+
+		cp "$tmpfile" "$prevtmp"
+	done
+} &
+
+wait

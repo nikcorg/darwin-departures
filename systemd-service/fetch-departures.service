@@ -1,0 +1,16 @@
+[Unit]
+Description=Fetch Departures from Darwin
+After=network-online.target
+Wants=network-online.target systemd-networkd-wait-online.service
+
+StartLimitIntervalSec=500
+StartLimitBurst=5
+
+[Service]
+Type=idle
+ExecStart=/usr/local/bin/fetch
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
