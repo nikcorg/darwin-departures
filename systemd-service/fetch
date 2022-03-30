@@ -56,7 +56,7 @@ max() {
 }
 
 cleanup() {
-	if ! rm -f "$pidfile" >/dev/null 2>&1; then
+	if ! rm -f "$pidfile" >/dev/null 1>/dev/null 2>&1; then
 		echo "error removing $pidfile" >&2
 	fi
 	exit "$1"
