@@ -94,17 +94,19 @@ do
 
 	updated_at="$(date -uIseconds)"
 	now="$(date +"%s")"
+	cycle_wait=0
 
 	# if the `etd` properties contain only "on time" or "cancelled" we do the slow cycle
 	if ! jq -r ".departures[].etd" "$output" | grep -vsqiE "(on time|cancelled)"; then
 		next_update="$(date -uIseconds --date="@$(( now + slow_cycle + slow_cycle_backoff + margin ))")"
-		jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
-		sleep $(( slow_cycle + slow_cycle_backoff ))
+		cycle_wait=$(( slow_cycle + slow_cycle_backoff ))
 	else
 		next_update="$(date -uIseconds --date="@$(( now + rapid_cycle + margin ))")"
-		jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
-		sleep "$rapid_cycle"
+		cycle_wait=$rapid_cycle
 	fi
+
+	# produce the update with the timestamp amendments
+	jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
 
 	# slow down if nothing is happening
 	if [[ "$(checksum "$tmpfile")" == "$(checksum "$prevtmp")" ]]; then
@@ -115,5 +117,9 @@ do
 		slow_cycle_backoff=0
 	fi
 
+	# cycle the tempfile content
 	cp "$tmpfile" "$prevtmp"
+
+	# wait until the next cycle
+	sleep $cycle_wait
 done
