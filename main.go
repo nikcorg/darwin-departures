@@ -31,11 +31,12 @@ var (
 
 	DarwinToken = ""
 
-	optRows   = flag.Int("num", 10, "number of results to fetch per station")
-	optOffset = flag.Int("offset", 0, "amount to offset current time in minutes (-120 to 120)")
-	optWindow = flag.Int("window", 0, "width of window to query in minutes, (1 to 120)")
-	jsonOut   = flag.Bool("json", false, "json output")
-	stations  []string
+	optTimeout = flag.Int("timeout", 5, "timeout for calling the remote service")
+	optRows    = flag.Int("num", 10, "number of results to fetch per station")
+	optOffset  = flag.Int("offset", 0, "amount to offset current time in minutes (-120 to 120)")
+	optWindow  = flag.Int("window", 0, "width of window to query in minutes, (1 to 120)")
+	jsonOut    = flag.Bool("json", false, "json output")
+	stations   []string
 )
 
 func init() {
@@ -76,7 +77,7 @@ func mainWithErr() error {
 		options.TimeWindow = *optWindow
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*optTimeout)*time.Second)
 	defer cancel()
 
 	currentHour := 23
