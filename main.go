@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -50,13 +51,13 @@ func main() {
 
 	stations = flag.Args()
 
-	if err := mainWithErr(); err != nil {
+	if err := mainWithErr(os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func mainWithErr() error {
+func mainWithErr(out io.Writer) error {
 	if len(stations) == 0 {
 		return ErrNoStations
 	} else if DarwinToken == "" {
@@ -123,9 +124,9 @@ func mainWithErr() error {
 
 	if len(results) == 0 {
 		if *jsonOut {
-			return jsonOutput([]Departure{})
+			return jsonOutput(out, []Departure{})
 		} else {
-			fmt.Println("no departures")
+			io.WriteString(out, "no departures")
 		}
 		return nil
 	}
@@ -135,22 +136,22 @@ func mainWithErr() error {
 	}
 
 	if *jsonOut {
-		return jsonOutput(results[0:departures])
+		return jsonOutput(out, results[0:departures])
 	}
 
-	plainTextOutput(results[0:departures])
+	plainTextOutput(out, results[0:departures])
 
 	return nil
 }
 
-func plainTextOutput(departures []Departure) {
-	fmt.Printf("%-5s %s %-20s %3s %9s\n", "When", "Sta", "To", "Plt", "Expected")
+func plainTextOutput(out io.Writer, departures []Departure) {
+	fmt.Fprintf(out, "%-5s %s %-20s %3s %9s\n", "When", "Sta", "To", "Plt", "Expected")
 	for _, d := range departures {
-		fmt.Println(d.Departure)
+		fmt.Fprintln(out, d.Departure)
 	}
 }
 
-func jsonOutput(departures []Departure) error {
+func jsonOutput(out io.Writer, departures []Departure) error {
 	page := struct {
 		Offset     int            `json:"offset"`
 		Stations   map[string]int `json:"stations"`
@@ -174,7 +175,7 @@ func jsonOutput(departures []Departure) error {
 		return err
 	}
 
-	fmt.Println(string(j))
+	fmt.Fprintln(out, string(j))
 
 	return nil
 }
