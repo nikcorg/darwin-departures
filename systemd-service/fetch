@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
-set -eu
+set -eu -o pipefail
 
-pidfile="/var/run/$(basename "$0").pid"
-
+# configurable options
 fetch_cmd="departures-linux-arm5 -json"
 fetch_opts="-offset 15 FOH CTF CFB"
 
@@ -15,6 +14,7 @@ margin=5
 slow_cycle=60
 rapid_cycle=15
 
+# source configuration when it exists
 if [[ -f /etc/fetch.conf ]]; then
 	# shellcheck disable=SC1091
 	source /etc/fetch.conf
@@ -22,6 +22,9 @@ fi
 
 set -- "$fetch_cmd" "$fetch_opts"
 fetch_cmd="$*"
+
+# check for a lockfile or create it if it doesn't exist or the creator is no longer running
+pidfile="/var/run/$(basename "$0").pid"
 
 # early exit if fetch is already running
 if [[ -s "$pidfile" ]] && ps -p "$(cat "$pidfile")" >/dev/null; then
@@ -31,76 +34,86 @@ fi
 
 echo $$ > "$pidfile"
 
-cleanup() {
-	{
-		if [[ -n "$(jobs -p)" ]]; then
-			# shellcheck disable=SC2046
-			kill $(jobs -p)
-		fi
+# create the output destination set the ownership
 
-		rm -f "$pidfile"
-	} >/dev/null 2>&1
+touch "$output"
+chown "$owneru":"$ownerg" "$output"
 
-	exit 0
+checksum() {
+	md5sum "$1" | awk '{ print $1 }'
 }
-
-trap cleanup EXIT ERR SIGINT SIGTERM
 
 fetch_update() {
 	eval "$fetch_cmd"
 }
 
-touch "$output"
-chown "$owneru":"$ownerg" "$output"
+max() {
+	if (( $1 >= $2 )); then
+		echo "$1"
+	else
+		echo "$2"
+	fi
+}
 
-{
-	prevtmp="$(mktemp)"
-	tmpfile="$(mktemp)"
-	backoff_increment=5
-	slow_cycle_backoff=0
-	errors=0
+cleanup() {
+	if ! rm -f "$pidfile" >/dev/null 2>&1; then
+		echo "[$(basename "$0")] error removing $pidfile" >&2
+	fi
+	exit "$1"
+}
 
-	while :
-	do
-		if ! fetch_update > "$tmpfile"; then
-			errors=$(( errors + 1 ))
-			sleep 2
-			continue
-		fi
+trap 'cleanup $?' EXIT
 
-		if (( errors > 0 )); then
-			echo "[$(basename "$0")] recovered after $errors failed update(s)" >&2
-			errors=0
-		fi
+# prep some variables for the work loop
 
-		updated_at="$(date -uIseconds)"
-		now="$(date +"%s")"
+failed_fetches=0
+fetch_err_backoff=1
+fetch_err_backoff_max=10
 
-		# if the `etd` properties contain only "on time" or "cancelled" we do the slow cycle
-		if ! jq -r ".departures[].etd" "$output" | grep -vsqiE "(on time|cancelled)"; then
-			next_update="$(date -uIseconds --date="@$(( now + slow_cycle + slow_cycle_backoff + margin ))")"
-			jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
-			sleep $(( slow_cycle + slow_cycle_backoff ))
-		else
-			next_update="$(date -uIseconds --date="@$(( now + rapid_cycle + margin ))")"
-			jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
-			sleep "$rapid_cycle"
-		fi
+backoff_increment=5
+slow_cycle_backoff=0
+slow_cycle_backoff_max=$(( slow_cycle * 2 ))
 
-		# slow down if nothing is happening
-		if [[ "$(md5sum "$tmpfile" | awk '{ print $1 }')" == "$(md5sum "$prevtmp" | awk '{ print $1 }')" ]]; then
-			# max out at `2 * slow_cycle`
-			if (( slow_cycle_backoff < slow_cycle * 2 )); then
-				slow_cycle_backoff=$(( slow_cycle_backoff + backoff_increment ))
-				backoff_increment=$(( backoff_increment * 2 ))
-			fi
-		else
-			backoff_increment=5
-			slow_cycle_backoff=0
-		fi
+prevtmp="$(mktemp)"
+tmpfile="$(mktemp)"
 
-		cp "$tmpfile" "$prevtmp"
-	done
-} &
+while :
+do
+	if ! fetch_update > "$tmpfile"; then
+		failed_fetches=$(( failed_fetches + 1 ))
+		sleep "$fetch_err_backoff"
+		fetch_err_backoff=$( max $fetch_err_backoff_max $(( fetch_err_backoff * 2 )) )
+		continue
+	fi
 
-wait
+	if (( failed_fetches > 0 )); then
+		echo "[$(basename "$0")] recovered after $failed_fetches failed update(s)" >&2
+		failed_fetches=0
+		fetch_err_backoff=1
+	fi
+
+	updated_at="$(date -uIseconds)"
+	now="$(date +"%s")"
+
+	# if the `etd` properties contain only "on time" or "cancelled" we do the slow cycle
+	if ! jq -r ".departures[].etd" "$output" | grep -vsqiE "(on time|cancelled)"; then
+		next_update="$(date -uIseconds --date="@$(( now + slow_cycle + slow_cycle_backoff + margin ))")"
+		jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
+		sleep $(( slow_cycle + slow_cycle_backoff ))
+	else
+		next_update="$(date -uIseconds --date="@$(( now + rapid_cycle + margin ))")"
+		jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
+		sleep "$rapid_cycle"
+	fi
+
+	# slow down if nothing is happening
+	if [[ "$(checksum "$tmpfile")" == "$(checksum "$prevtmp")" ]]; then
+		slow_cycle_backoff=$( max $slow_cycle_backoff_max $(( slow_cycle_backoff + backoff_increment )) )
+		backoff_increment=$(( backoff_increment * 2 ))
+	else
+		backoff_increment=5
+		slow_cycle_backoff=0
+	fi
+
+	cp "$tmpfile" "$prevtmp"
+done
