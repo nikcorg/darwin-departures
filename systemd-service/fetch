@@ -34,11 +34,6 @@ fi
 
 echo $$ > "$pidfile"
 
-# create the output destination set the ownership
-
-touch "$output"
-chown "$owneru":"$ownerg" "$output"
-
 checksum() {
 	md5sum "$1" | awk '{ print $1 }'
 }
@@ -106,7 +101,9 @@ do
 	fi
 
 	# produce the update with the timestamp amendments
-	jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" > "$output"
+	install -m 644 -g "$ownerg" -o "$owneru" <( \
+		jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" \
+	) "$output"
 
 	# slow down if nothing is happening
 	if [[ "$(checksum "$tmpfile")" == "$(checksum "$prevtmp")" ]]; then
