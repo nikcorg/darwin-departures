@@ -28,7 +28,7 @@ pidfile="/var/run/$(basename "$0").pid"
 
 # early exit if fetch is already running
 if [[ -s "$pidfile" ]] && ps -p "$(cat "$pidfile")" >/dev/null; then
-	echo "[$(basename "$0")] (pid=$$) exiting, service already running on pid=$(cat "$pidfile")" >&2
+	echo "exiting, service already running" >&2
 	exit 0
 fi
 
@@ -57,7 +57,7 @@ max() {
 
 cleanup() {
 	if ! rm -f "$pidfile" >/dev/null 2>&1; then
-		echo "[$(basename "$0")] error removing $pidfile" >&2
+		echo "error removing $pidfile" >&2
 	fi
 	exit "$1"
 }
@@ -87,7 +87,7 @@ do
 	fi
 
 	if (( failed_fetches > 0 )); then
-		echo "[$(basename "$0")] recovered after $failed_fetches failed update(s)" >&2
+		echo "recovered after $failed_fetches failed update(s)" >&2
 		failed_fetches=0
 		fetch_err_backoff=1
 	fi
