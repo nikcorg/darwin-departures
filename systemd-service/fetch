@@ -42,11 +42,11 @@ fetch_update() {
 	eval "$fetch_cmd"
 }
 
-max() {
-	if (( $1 >= $2 )); then
-		echo "$1"
-	else
+min() {
+	if (( $1 > $2 )); then
 		echo "$2"
+	else
+		echo "$1"
 	fi
 }
 
@@ -77,7 +77,7 @@ do
 	if ! fetch_update > "$tmpfile"; then
 		failed_fetches=$(( failed_fetches + 1 ))
 		sleep "$fetch_err_backoff"
-		fetch_err_backoff=$( max $fetch_err_backoff_max $(( fetch_err_backoff * 2 )) )
+		fetch_err_backoff=$( min $fetch_err_backoff_max $(( fetch_err_backoff * 2 )) )
 		continue
 	fi
 
@@ -107,7 +107,7 @@ do
 
 	# slow down if nothing is happening
 	if [[ "$(checksum "$tmpfile")" == "$(checksum "$prevtmp")" ]]; then
-		slow_cycle_backoff=$( max $slow_cycle_backoff_max $(( slow_cycle_backoff + backoff_increment )) )
+		slow_cycle_backoff=$( min $slow_cycle_backoff_max $(( slow_cycle_backoff + backoff_increment )) )
 		backoff_increment=$(( backoff_increment * 2 ))
 	else
 		backoff_increment=5
