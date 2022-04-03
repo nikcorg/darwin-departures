@@ -92,7 +92,7 @@ do
 	cycle_wait=0
 
 	# if the `etd` properties contain only "on time" or "cancelled" we do the slow cycle
-	if ! jq -r ".departures[].etd" "$output" | grep -vsqiE "(on time|cancelled)"; then
+	if ! jq -r ".departures[].etd" "$tmpfile" | grep -vsqiE "(on time|cancelled)"; then
 		next_update="$(date -uIseconds --date="@$(( now + slow_cycle + slow_cycle_backoff + margin ))")"
 		cycle_wait=$(( slow_cycle + slow_cycle_backoff ))
 	else
