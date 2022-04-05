@@ -34,6 +34,14 @@ fi
 
 echo $$ > "$pidfile"
 
+debug() {
+	if [[ "$LOG_LEVEL" != "debug" ]]; then
+		return
+	fi
+
+	echo "DEBUG: $@" >&2
+}
+
 checksum() {
 	md5sum "$1" | awk '{ print $1 }'
 }
@@ -87,8 +95,8 @@ do
 		fetch_err_backoff=1
 	fi
 
-	updated_at="$(date -uIseconds)"
 	now="$(date +"%s")"
+	updated_at="$(date -uIseconds --date="@$now")"
 	cycle_wait=0
 
 	# if the `etd` properties contain only "on time" or "cancelled" we do the slow cycle
@@ -99,6 +107,12 @@ do
 		next_update="$(date -uIseconds --date="@$(( now + rapid_cycle + margin ))")"
 		cycle_wait=$rapid_cycle
 	fi
+
+	debug "updated_at= $updated_at (now=$now)"
+	debug "next_update=$next_update"
+	debug "slow_cycle_backoff=$slow_cycle_backoff"
+	debug "backoff_increment=$backoff_increment"
+	debug "cycle_wait=$cycle_wait"
 
 	# produce the update with the timestamp amendments
 	install -m 644 -g "$ownerg" -o "$owneru" <( \
@@ -120,3 +134,4 @@ do
 	# wait until the next cycle
 	sleep $cycle_wait
 done
+
