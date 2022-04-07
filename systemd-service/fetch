@@ -48,7 +48,7 @@ fi
 echo $$ > "$pidfile"
 
 debug() {
-	if [[ "$LOG_LEVEL" != "debug" ]]; then
+	if [[ "${LOG_LEVEL:-}" != "debug" ]]; then
 		return
 	fi
 
