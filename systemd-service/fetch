@@ -9,9 +9,6 @@ readonly pidfile="/var/run/$(basename "$0").pid"
 fetch_cmd="departures-linux-arm5 -json"
 fetch_opts="-offset 15 FOH CTF CFB"
 
-set -- "$fetch_cmd" "$fetch_opts"
-fetch_cmd="$*"
-
 output="/var/www/html/departures.json"
 owneru="www-data"
 ownerg="www-data"
@@ -53,7 +50,8 @@ debug() {
 }
 
 fetch_update() {
-	eval "$fetch_cmd"
+	set -- "$fetch_cmd" "$fetch_opts"
+	eval "$*"
 }
 
 min() {
