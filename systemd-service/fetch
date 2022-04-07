@@ -52,11 +52,7 @@ debug() {
 		return
 	fi
 
-	echo "DEBUG: $@" >&2
-}
-
-checksum() {
-	md5sum "$1" | awk '{ print $1 }'
+	echo "DEBUG: $*" >&2
 }
 
 fetch_update() {
