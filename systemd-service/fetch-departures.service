@@ -9,6 +9,7 @@ StartLimitBurst=5
 [Service]
 Type=idle
 ExecStart=/usr/local/bin/fetch
+ExecReload=/bin/kill -USR1 $MAINPID
 Restart=on-failure
 RestartSec=5s
 
