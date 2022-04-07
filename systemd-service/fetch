@@ -2,6 +2,9 @@
 
 set -eu -o pipefail
 
+readonly config_file="/etc/fetch.conf"
+readonly pidfile="/var/run/$(basename "$0").pid"
+
 # configurable options
 fetch_cmd="departures-linux-arm5 -json"
 fetch_opts="-offset 15 FOH CTF CFB"
