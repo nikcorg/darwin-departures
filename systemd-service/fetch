@@ -9,6 +9,9 @@ readonly pidfile="/var/run/$(basename "$0").pid"
 fetch_cmd="departures-linux-arm5 -json"
 fetch_opts="-offset 15 FOH CTF CFB"
 
+set -- "$fetch_cmd" "$fetch_opts"
+fetch_cmd="$*"
+
 output="/var/www/html/departures.json"
 owneru="www-data"
 ownerg="www-data"
@@ -17,19 +20,26 @@ margin=5
 slow_cycle=60
 rapid_cycle=15
 
-# source configuration when it exists
-if [[ -f /etc/fetch.conf ]]; then
-	# shellcheck disable=SC1091
-	source /etc/fetch.conf
-fi
+checksum() {
+	md5sum "$1" | awk '{ print $1 }'
+}
 
-set -- "$fetch_cmd" "$fetch_opts"
-fetch_cmd="$*"
+loaded_config=""
+
+load_config() {
+	# source configuration when it exists
+	if [[ -f "$config_file" ]] && [[ "$(checksum "$config_file")" != "$loaded_config" ]]; then
+		# shellcheck disable=SC1091
+		source "$config_file"
+
+		loaded_config="$(checksum "$config_file")"
+
+		set -- "$fetch_cmd" "$fetch_opts"
+		fetch_cmd="$*"
+	fi
+}
 
 # check for a lockfile or create it if it doesn't exist or the creator is no longer running
-pidfile="/var/run/$(basename "$0").pid"
-
-# early exit if fetch is already running
 if [[ -s "$pidfile" ]] && ps -p "$(cat "$pidfile")" >/dev/null; then
 	echo "exiting, service already running" >&2
 	exit 0
@@ -69,6 +79,11 @@ cleanup() {
 }
 
 trap 'cleanup $?' EXIT
+
+# source config and set the reload trap
+load_config
+
+trap 'load_config' USR1
 
 # prep some variables for the work loop
 
