@@ -24,18 +24,15 @@ checksum() {
 	md5sum "$1" | awk '{ print $1 }'
 }
 
-loaded_config=""
+config_checksum=""
 
 load_config() {
 	# source configuration when it exists
-	if [[ -f "$config_file" ]] && [[ "$(checksum "$config_file")" != "$loaded_config" ]]; then
-		# shellcheck disable=SC1091
+	if [[ -f "$config_file" ]] && [[ "$(checksum "$config_file")" != "$config_checksum" ]]; then
+		# shellcheck disable=SC1091,SC1090
 		source "$config_file"
 
-		loaded_config="$(checksum "$config_file")"
-
-		set -- "$fetch_cmd" "$fetch_opts"
-		fetch_cmd="$*"
+		config_checksum="$(checksum "$config_file")"
 	fi
 }
 
