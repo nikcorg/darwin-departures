@@ -100,7 +100,9 @@ func mainWithErr(out io.Writer) error {
 			hh, _ := strconv.Atoi(hours)
 			mm, _ := strconv.Atoi(minutes)
 
-			// Adjust hour for sorting
+			// If we're past midday and the departure hour is less than 12 that means it's an after midnight 
+			// time, because all departures are in the future. Add 24 to ensure the hour will slot in in the 
+			// correct position when sorting. This only affects the sorting order, not the displayed time.
 			if currentHour > 12 && hh < 12 {
 				hh += 24
 			}
