@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+readonly config_file="/etc/fetch.conf"
+readonly pidfile="/var/run/$(basename "$0").pid"
+
+# configurable options
+fetch_cmd="departures-linux-arm5 -json"
+fetch_opts="-offset 15 FOH CTF CFB"
+
+output="/var/www/html/departures.json"
+owneru="www-data"
+ownerg="www-data"
+
+margin=5
+slow_cycle=60
+rapid_cycle=15
+
+checksum() {
+	md5sum "$1" | awk '{ print $1 }'
+}
+
+config_checksum=""
+
+load_config() {
+	# source configuration when it exists
+	if [[ -f "$config_file" ]] && [[ "$(checksum "$config_file")" != "$config_checksum" ]]; then
+		# shellcheck disable=SC1091,SC1090
+		source "$config_file"
+
+		config_checksum="$(checksum "$config_file")"
+	fi
+}
+
+# check for a lockfile or create it if it doesn't exist or the creator is no longer running
+if [[ -s "$pidfile" ]] && ps -p "$(cat "$pidfile")" >/dev/null; then
+	echo "exiting, service already running" >&2
+	exit 0
+fi
+
+echo $$ > "$pidfile"
+
+debug() {
+	if [[ "${LOG_LEVEL:-}" != "debug" ]]; then
+		return
+	fi
+
+	echo "DEBUG: $*" >&2
+}
+
+fetch_update() {
+	set -- "$fetch_cmd" "$fetch_opts"
+	eval "$*"
+}
+
+min() {
+	if (( $1 > $2 )); then
+		echo "$2"
+	else
+		echo "$1"
+	fi
+}
+
+cleanup() {
+	if ! rm -f "$pidfile" >/dev/null 1>/dev/null 2>&1; then
+		echo "error removing $pidfile" >&2
+	fi
+	exit "$1"
+}
+
+trap 'cleanup $?' EXIT
+
+# source config and set the reload trap
+load_config
+
+trap 'load_config' USR1
+
+# prep some variables for the work loop
+
+failed_fetches=0
+fetch_err_backoff=1
+fetch_err_backoff_max=10
+
+backoff_increment=5
+slow_cycle_backoff=0
+slow_cycle_backoff_max=$(( slow_cycle * 2 ))
+
+prevtmp="$(mktemp)"
+tmpfile="$(mktemp)"
+
+while :
+do
+	if ! fetch_update > "$tmpfile"; then
+		failed_fetches=$(( failed_fetches + 1 ))
+		sleep "$fetch_err_backoff"
+		fetch_err_backoff=$( min $fetch_err_backoff_max $(( fetch_err_backoff * 2 )) )
+		continue
+	fi
+
+	if (( failed_fetches > 0 )); then
+		echo "recovered after $failed_fetches failed update(s)" >&2
+		failed_fetches=0
+		fetch_err_backoff=1
+	fi
+
+	now="$(date +"%s")"
+	updated_at="$(date -uIseconds --date="@$now")"
+	cycle_wait=0
+
+	# if the `etd` properties contain only "on time" or "cancelled" we do the slow cycle
+	if ! jq -r ".departures[].etd" "$tmpfile" | grep -vsqiE "(on time|cancelled)"; then
+		next_update="$(date -uIseconds --date="@$(( now + slow_cycle + slow_cycle_backoff + margin ))")"
+		cycle_wait=$(( slow_cycle + slow_cycle_backoff ))
+	else
+		next_update="$(date -uIseconds --date="@$(( now + rapid_cycle + margin ))")"
+		cycle_wait=$rapid_cycle
+	fi
+
+	debug "updated_at= $updated_at (now=$now)"
+	debug "next_update=$next_update"
+	debug "slow_cycle_backoff=$slow_cycle_backoff"
+	debug "backoff_increment=$backoff_increment"
+	debug "cycle_wait=$cycle_wait"
+
+	# produce the update with the timestamp amendments
+	install -m 644 -g "$ownerg" -o "$owneru" <( \
+		jq ".nextUpdateAfter |= \"$next_update\" | .updatedAt |= \"$updated_at\"" "$tmpfile" \
+	) "$output"
+
+	# slow down if nothing is happening
+	if [[ "$(checksum "$tmpfile")" == "$(checksum "$prevtmp")" ]]; then
+		slow_cycle_backoff=$( min $slow_cycle_backoff_max $(( slow_cycle_backoff + backoff_increment )) )
+		backoff_increment=$(( backoff_increment * 2 ))
+	else
+		backoff_increment=5
+		slow_cycle_backoff=0
+	fi
+
+	# cycle the tempfile content
+	cp "$tmpfile" "$prevtmp"
+
+	# wait until the next cycle
+	sleep $cycle_wait
+done
+
