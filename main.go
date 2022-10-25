@@ -81,7 +81,7 @@ func mainWithErr(out io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*optTimeout)*time.Second)
 	defer cancel()
 
-	currentHour := 23
+	currentHour := time.Now().Hour()
 	results := []Departure{}
 
 	for _, stationCode := range stations {
