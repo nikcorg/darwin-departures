@@ -117,7 +117,8 @@ do
 		cycle_wait=$rapid_cycle
 	fi
 
-	debug "updated_at= $updated_at (now=$now)"
+	debug "now=        $now"
+	debug "updated_at= $updated_at"
 	debug "next_update=$next_update"
 	debug "slow_cycle_backoff=$slow_cycle_backoff"
 	debug "backoff_increment=$backoff_increment"
