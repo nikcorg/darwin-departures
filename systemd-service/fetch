@@ -2,12 +2,13 @@
 
 set -eu -o pipefail
 
-readonly config_file="/etc/fetch.conf"
+# shellcheck disable=SC2155
 readonly pidfile="/var/run/$(basename "$0").pid"
+readonly config_file="/etc/fetch.conf"
 
 # configurable options
-fetch_cmd="departures-linux-arm5 -json"
-fetch_opts="-offset 15 FOH CTF CFB"
+fetch_cmd=( departures-linux-arm5 -json )
+fetch_opts=( -offset 15 FOH CTF CFB )
 
 output="/var/www/html/departures.json"
 owneru="www-data"
@@ -56,7 +57,7 @@ debug() {
 }
 
 fetch_update() {
-	set -- "$fetch_cmd" "$fetch_opts"
+	set -- "${fetch_cmd[@]}" "${fetch_opts[@]}"
 	eval "$*"
 }
 
