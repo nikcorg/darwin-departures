@@ -17,6 +17,8 @@ margin=5
 slow_cycle=60
 rapid_cycle=15
 
+debug_output=false
+
 checksum() {
 	md5sum "$1" | awk '{ print $1 }'
 }
@@ -30,6 +32,12 @@ load_config() {
 		source "$config_file"
 
 		config_checksum="$(checksum "$config_file")"
+
+		if [[ "${LOG_LEVEL:-}" != "debug" ]]; then
+			debug_output=true
+		else
+			debug_output=false
+		fi
 	fi
 }
 
@@ -42,11 +50,9 @@ fi
 echo $$ > "$pidfile"
 
 debug() {
-	if [[ "${LOG_LEVEL:-}" != "debug" ]]; then
-		return
+	if $debug_output; then
+		echo "DEBUG: $*" >&2
 	fi
-
-	echo "DEBUG: $*" >&2
 }
 
 fetch_update() {
