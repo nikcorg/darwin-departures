@@ -80,7 +80,7 @@ func mainWithErr(out io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*optTimeout)*time.Second)
 	defer cancel()
 
-	// currentHour := time.Now().Hour()
+	currentHour := time.Now().Hour()
 	results := []Departure{}
 
 	for _, stationCode := range stations {
@@ -91,11 +91,16 @@ func mainWithErr(out io.Writer) error {
 		}
 
 		for _, s := range page.Departures {
+			hh := s.Due.Hour()
+
+			if currentHour > 12 && hh < 12 {
+				hh += 24
+			}
 
 			results = append(results,
 				Departure{
-					SortBy: s.Due.Hour()*60 + s.Due.Minute(),
-					Departure: fmt.Sprintf("%-5s %3s %-32s %9s",
+					SortBy: hh*60 + s.Due.Minute(),
+					Departure: fmt.Sprintf("%-5s %3s %-37s %9s",
 						fmt.Sprintf("%02d:%02d", s.Due.Hour(), s.Due.Minute()), s.Service, s.Destination, stringifyEtd(s.Etd, s.Due)),
 					Due:         fmt.Sprintf("%02d:%02d", s.Due.Hour(), s.Due.Minute()),
 					Etd:         stringifyEtd(s.Etd, s.Due),
@@ -133,7 +138,7 @@ func mainWithErr(out io.Writer) error {
 }
 
 func stringifyEtd(due *time.Time, compareTo *time.Time) string {
-	if due.Compare(*compareTo) == 0 {
+	if due.Round(time.Minute).Compare(compareTo.Round(time.Minute)) == 0 {
 		return "On time"
 	}
 
@@ -141,7 +146,7 @@ func stringifyEtd(due *time.Time, compareTo *time.Time) string {
 }
 
 func plainTextOutput(out io.Writer, departures []Departure) {
-	fmt.Fprintf(out, "%-5s %-3s %-32s %9s\n", "When", "Srv", "To", "Expected")
+	fmt.Fprintf(out, "%-5s %-3s %-37s %9s\n", "When", "Srv", "To", "Expected")
 	for _, d := range departures {
 		fmt.Fprintln(out, d.Departure)
 	}
