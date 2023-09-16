@@ -9,11 +9,9 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
-	"nikc.org/departure-board/nationalrail"
+	"nikc.org/departure-board/hsl"
 )
 
 type Departure struct {
@@ -22,15 +20,15 @@ type Departure struct {
 	Destination string `json:"dst"`
 	Due         string `json:"due"`
 	Etd         string `json:"etd"`
-	Platform    string `json:"pla"`
 	Station     string `json:"sta"`
+	Service     string `json:"srv"`
 }
 
 var (
 	ErrNoStations = errors.New("no stations")
 	ErrNotoken    = errors.New("no token")
 
-	DarwinToken = ""
+	HSLToken = ""
 
 	optTimeout = flag.Int("timeout", 5, "timeout for calling the remote service")
 	optRows    = flag.Int("num", 10, "number of results to fetch per station")
@@ -41,8 +39,8 @@ var (
 )
 
 func init() {
-	if token, ok := os.LookupEnv("DARWIN_TOKEN"); ok {
-		DarwinToken = token
+	if token, ok := os.LookupEnv("HSL_TOKEN"); ok {
+		HSLToken = token
 	}
 }
 
@@ -60,13 +58,13 @@ func main() {
 func mainWithErr(out io.Writer) error {
 	if len(stations) == 0 {
 		return ErrNoStations
-	} else if DarwinToken == "" {
+	} else if HSLToken == "" {
 		return ErrNotoken
 	}
 
-	cli := nationalrail.New(DarwinToken)
+	cli := hsl.New(HSLToken)
 	departures := 10
-	options := &nationalrail.FetchOptions{Rows: departures}
+	options := &hsl.FetchOptions{Rows: departures}
 
 	if optRows != nil {
 		options.Rows, departures = *optRows, *optRows*len(stations)
@@ -81,40 +79,27 @@ func mainWithErr(out io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*optTimeout)*time.Second)
 	defer cancel()
 
-	currentHour := time.Now().Hour()
+	// currentHour := time.Now().Hour()
 	results := []Departure{}
 
 	for _, stationCode := range stations {
-		r, err := cli.GetDeparturesBoard(ctx, stationCode, options)
+		page := hsl.DeparturePage{}
+		err := cli.GetDepartures(ctx, stationCode, &page, options)
 		if err != nil {
 			return err
 		}
 
-		res := r.Body.GetDepartureBoardResponse.GetStationBoardResult
-		for _, s := range res.TrainServices.Service {
-			hours, minutes, ok := strings.Cut(s.Std, ":")
-			if !ok {
-				return errors.New("error parsing departure time")
-			}
-
-			hh, _ := strconv.Atoi(hours)
-			mm, _ := strconv.Atoi(minutes)
-
-			// If we're past midday and the departure hour is less than 12 that means it's an after midnight 
-			// time, because all departures are in the future. Add 24 to ensure the hour will slot in in the 
-			// correct position when sorting. This only affects the sorting order, not the displayed time.
-			if currentHour > 12 && hh < 12 {
-				hh += 24
-			}
+		for _, s := range page.Departures {
 
 			results = append(results,
 				Departure{
-					SortBy:      hh*60 + mm,
-					Departure:   fmt.Sprintf("%s %s %-20s %3s %9s", s.Std, stationCode, s.Destination.Location.LocationName, s.Platform, s.Etd),
-					Due:         s.Std,
-					Platform:    s.Platform,
-					Etd:         s.Etd,
-					Destination: s.Destination.Location.LocationName,
+					SortBy: s.Due.Hour()*60 + s.Due.Minute(),
+					Departure: fmt.Sprintf("%-5s %3s %-32s %9s",
+						fmt.Sprintf("%02d:%02d", s.Due.Hour(), s.Due.Minute()), s.Service, s.Destination, stringifyEtd(s.Etd, s.Due)),
+					Due:         fmt.Sprintf("%02d:%02d", s.Due.Hour(), s.Due.Minute()),
+					Etd:         stringifyEtd(s.Etd, s.Due),
+					Destination: s.Destination,
+					Service:     s.Service,
 					Station:     stationCode,
 				})
 		}
@@ -146,8 +131,16 @@ func mainWithErr(out io.Writer) error {
 	return nil
 }
 
+func stringifyEtd(due *time.Time, compareTo *time.Time) string {
+	if due.Compare(*compareTo) == 0 {
+		return "On time"
+	}
+
+	return fmt.Sprintf("%02d:%02d", due.Hour(), due.Minute())
+}
+
 func plainTextOutput(out io.Writer, departures []Departure) {
-	fmt.Fprintf(out, "%-5s %s %-20s %3s %9s\n", "When", "Sta", "To", "Plt", "Expected")
+	fmt.Fprintf(out, "%-5s %-3s %-32s %9s\n", "When", "Srv", "To", "Expected")
 	for _, d := range departures {
 		fmt.Fprintln(out, d.Departure)
 	}
