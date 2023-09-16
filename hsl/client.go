@@ -36,30 +36,31 @@ func New(t string) *Client {
 }
 
 type FetchOptions struct {
-	Rows       int
-	TimeOffset int
-	TimeWindow int
+	Rows       uint
+	TimeOffset uint
+	TimeWindow uint
 
 	startTime time.Time
 }
 
-func (fo *FetchOptions) WithRows(r int) *FetchOptions {
+func (fo *FetchOptions) WithRows(r uint) *FetchOptions {
 	if r > 0 {
 		fo.Rows = r
 	}
 	return fo
 }
 
-func (fo *FetchOptions) WithWindow(o int) *FetchOptions {
+func (fo *FetchOptions) WithWindow(o uint) *FetchOptions {
 	if o > 0 {
 		fo.TimeWindow = o
 	}
 	return fo
 }
 
-func (fo *FetchOptions) WithOffset(o int) *FetchOptions {
+func (fo *FetchOptions) WithOffset(o uint) *FetchOptions {
 	if o > 0 {
-		fo.startTime = time.Now().Add(time.Second * time.Duration(o))
+		fo.TimeOffset = o
+		fo.startTime = time.Now().Add(time.Minute * time.Duration(o))
 	}
 
 	return fo
@@ -175,13 +176,21 @@ func (c *Client) sendQuery(ctx context.Context, sta string, opts *FetchOptions) 
 
 type requestOpts struct {
 	Stop      string `json:"stop"`
-	TimeRange int    `json:"timeRange"`
-	StartTime int    `json:"startTime"`
-	Num       int    `json:"num"`
+	TimeRange uint   `json:"timeRange"`
+	StartTime uint64 `json:"startTime"`
+	Num       uint   `json:"num"`
 }
 
 func getDeparturesQuery(stop string, opts *FetchOptions) (*graphRequest[requestOpts], error) {
-	ropts := requestOpts{stop, opts.TimeWindow, opts.TimeOffset, opts.Rows}
+	ropts := requestOpts{Stop: stop, Num: opts.Rows}
+
+	if opts.TimeWindow > 0 {
+		ropts.TimeRange = opts.TimeWindow
+	}
+
+	if opts.TimeOffset > 0 {
+		ropts.StartTime = uint64(opts.startTime.Unix())
+	}
 
 	buf := &bytes.Buffer{}
 	if err := gqlReq.Execute(buf, ropts); err != nil {

@@ -32,8 +32,8 @@ var (
 
 	optTimeout = flag.Int("timeout", 5, "timeout for calling the remote service")
 	optRows    = flag.Int("num", 10, "number of results to fetch per station")
-	optOffset  = flag.Int("offset", 0, "amount to offset current time in minutes (-120 to 120)")
-	optWindow  = flag.Int("window", 0, "width of window to query in minutes, (1 to 120)")
+	optOffset  = flag.Int("offset", 0, "amount to offset current time in minutes")
+	optWindow  = flag.Int("window", 0, "width of window to query in minutes")
 	jsonOut    = flag.Bool("json", false, "json output")
 	stations   []string
 )
@@ -64,16 +64,17 @@ func mainWithErr(out io.Writer) error {
 
 	cli := hsl.New(HSLToken)
 	departures := 10
-	options := &hsl.FetchOptions{Rows: departures}
+	options := (&hsl.FetchOptions{}).WithRows(uint(departures))
 
 	if optRows != nil {
-		options.Rows, departures = *optRows, *optRows*len(stations)
+		departures = *optRows
+		options.WithRows(uint(departures))
 	}
 	if optOffset != nil {
-		options.TimeOffset = *optOffset
+		options.WithOffset(uint(*optOffset))
 	}
 	if optWindow != nil {
-		options.TimeWindow = *optWindow
+		options.WithWindow(uint(*optWindow))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*optTimeout)*time.Second)
@@ -113,7 +114,7 @@ func mainWithErr(out io.Writer) error {
 		if *jsonOut {
 			return jsonOutput(out, []Departure{})
 		} else {
-			io.WriteString(out, "no departures")
+			io.WriteString(out, "no departures\n")
 		}
 		return nil
 	}
