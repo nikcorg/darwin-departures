@@ -158,17 +158,17 @@ func plainTextOutput(out io.Writer, departures []Departure) {
 
 func jsonOutput(out io.Writer, departures []Departure, names map[string]string) error {
 	page := struct {
-		Offset     int               `json:"offset"`
-		Stations   map[string]int    `json:"stations"`
-		Departures []Departure       `json:"departures"`
-		Names      map[string]string `json:"names"`
+		Offset     int            `json:"offset"`
+		Stations   map[string]int `json:"stations"`
+		Departures []Departure    `json:"departures"`
+		Names      [][]string     `json:"names"`
 	}{
 		Offset:     *optOffset,
 		Stations:   map[string]int{},
 		Departures: departures,
-		Names:      names,
 	}
 
+	// set all stations to 0 so that all stations are present in the export
 	for _, s := range stations {
 		page.Stations[s] = 0
 	}
@@ -176,6 +176,15 @@ func jsonOutput(out io.Writer, departures []Departure, names map[string]string) 
 	for _, d := range departures {
 		page.Stations[d.Station]++
 	}
+
+	page.Names = make([][]string, 0)
+	for k, n := range names {
+		page.Names = append(page.Names, []string{k, n})
+	}
+
+	sort.Slice(page.Names, func(a, b int) bool {
+		return page.Names[a][1] < page.Names[b][1]
+	})
 
 	j, err := json.Marshal(page)
 	if err != nil {
