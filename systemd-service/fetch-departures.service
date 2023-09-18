@@ -1,5 +1,5 @@
 [Unit]
-Description=Fetch Departures from Darwin
+Description=Fetch Departureboard
 After=network-online.target
 Wants=network-online.target systemd-networkd-wait-online.service
 
