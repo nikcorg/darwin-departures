@@ -83,12 +83,16 @@ func mainWithErr(out io.Writer) error {
 	currentHour := time.Now().Hour()
 	results := []Departure{}
 
+	stationNames := map[string]string{}
+
 	for _, stationCode := range stations {
 		page := hsl.DeparturePage{}
 		err := cli.GetDepartures(ctx, stationCode, &page, options)
 		if err != nil {
 			return err
 		}
+
+		stationNames[stationCode] = page.Stop.Name
 
 		for _, s := range page.Departures {
 			hh := s.Due.Hour()
@@ -117,7 +121,7 @@ func mainWithErr(out io.Writer) error {
 
 	if len(results) == 0 {
 		if *jsonOut {
-			return jsonOutput(out, []Departure{})
+			return jsonOutput(out, []Departure{}, map[string]string{})
 		} else {
 			io.WriteString(out, "no departures\n")
 		}
@@ -129,7 +133,7 @@ func mainWithErr(out io.Writer) error {
 	}
 
 	if *jsonOut {
-		return jsonOutput(out, results[0:departures])
+		return jsonOutput(out, results[0:departures], stationNames)
 	}
 
 	plainTextOutput(out, results[0:departures])
@@ -152,15 +156,17 @@ func plainTextOutput(out io.Writer, departures []Departure) {
 	}
 }
 
-func jsonOutput(out io.Writer, departures []Departure) error {
+func jsonOutput(out io.Writer, departures []Departure, names map[string]string) error {
 	page := struct {
-		Offset     int            `json:"offset"`
-		Stations   map[string]int `json:"stations"`
-		Departures []Departure    `json:"departures"`
+		Offset     int               `json:"offset"`
+		Stations   map[string]int    `json:"stations"`
+		Departures []Departure       `json:"departures"`
+		Names      map[string]string `json:"names"`
 	}{
 		Offset:     *optOffset,
 		Stations:   map[string]int{},
 		Departures: departures,
+		Names:      names,
 	}
 
 	for _, s := range stations {

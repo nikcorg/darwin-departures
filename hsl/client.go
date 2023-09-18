@@ -13,6 +13,10 @@ import (
 )
 
 type DeparturePage struct {
+	Stop struct {
+		Name string
+		Code string
+	}
 	Departures []Departure
 }
 
@@ -87,6 +91,10 @@ func (c *Client) GetDepartures(ctx context.Context, sta string, page *DepartureP
 	}
 
 	stop := gresp.Data.Stop
+
+	page.Stop.Name = stop.Name
+	page.Stop.Code = stop.Code
+
 	for _, s := range stop.StopTimes {
 		d := Departure{}
 
