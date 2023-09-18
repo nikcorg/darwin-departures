@@ -1,4 +1,4 @@
-LD_FLAGS := -X \"main.DarwinToken=${DARWIN_TOKEN}\"
+LD_FLAGS := -X \"main.HSLToken=${HSL_TOKEN}\"
 BIN_NAME := departures
 
 .PHONY: build

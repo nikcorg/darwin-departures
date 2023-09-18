@@ -52,13 +52,13 @@ echo $$ > "$pidfile"
 
 debug() {
 	if $debug_output; then
-		echo "DEBUG: $*" >&2
+		echo "DEBUG:" "$@" >&2
 	fi
 }
 
 fetch_update() {
 	set -- "${fetch_cmd[@]}" "${fetch_opts[@]}"
-	eval "$*"
+	"$@"
 }
 
 min() {

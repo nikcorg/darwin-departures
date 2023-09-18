@@ -9,11 +9,9 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
-	"nikc.org/departure-board/nationalrail"
+	"nikc.org/departure-board/hsl"
 )
 
 type Departure struct {
@@ -22,27 +20,27 @@ type Departure struct {
 	Destination string `json:"dst"`
 	Due         string `json:"due"`
 	Etd         string `json:"etd"`
-	Platform    string `json:"pla"`
 	Station     string `json:"sta"`
+	Service     string `json:"srv"`
 }
 
 var (
 	ErrNoStations = errors.New("no stations")
 	ErrNotoken    = errors.New("no token")
 
-	DarwinToken = ""
+	HSLToken = ""
 
 	optTimeout = flag.Int("timeout", 5, "timeout for calling the remote service")
 	optRows    = flag.Int("num", 10, "number of results to fetch per station")
-	optOffset  = flag.Int("offset", 0, "amount to offset current time in minutes (-120 to 120)")
-	optWindow  = flag.Int("window", 0, "width of window to query in minutes, (1 to 120)")
+	optOffset  = flag.Int("offset", 0, "amount to offset current time in minutes")
+	optWindow  = flag.Int("window", 0, "width of window to query in minutes")
 	jsonOut    = flag.Bool("json", false, "json output")
 	stations   []string
 )
 
 func init() {
-	if token, ok := os.LookupEnv("DARWIN_TOKEN"); ok {
-		DarwinToken = token
+	if token, ok := os.LookupEnv("HSL_TOKEN"); ok {
+		HSLToken = token
 	}
 }
 
@@ -60,22 +58,23 @@ func main() {
 func mainWithErr(out io.Writer) error {
 	if len(stations) == 0 {
 		return ErrNoStations
-	} else if DarwinToken == "" {
+	} else if HSLToken == "" {
 		return ErrNotoken
 	}
 
-	cli := nationalrail.New(DarwinToken)
+	cli := hsl.New(HSLToken)
 	departures := 10
-	options := &nationalrail.FetchOptions{Rows: departures}
+	options := (&hsl.FetchOptions{}).WithRows(uint(departures))
 
 	if optRows != nil {
-		options.Rows, departures = *optRows, *optRows*len(stations)
+		departures = *optRows
+		options.WithRows(uint(departures))
 	}
 	if optOffset != nil {
-		options.TimeOffset = *optOffset
+		options.WithOffset(uint(*optOffset))
 	}
 	if optWindow != nil {
-		options.TimeWindow = *optWindow
+		options.WithWindow(uint(*optWindow))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*optTimeout)*time.Second)
@@ -84,37 +83,33 @@ func mainWithErr(out io.Writer) error {
 	currentHour := time.Now().Hour()
 	results := []Departure{}
 
+	stationNames := map[string]string{}
+
 	for _, stationCode := range stations {
-		r, err := cli.GetDeparturesBoard(ctx, stationCode, options)
+		page := hsl.DeparturePage{}
+		err := cli.GetDepartures(ctx, stationCode, &page, options)
 		if err != nil {
 			return err
 		}
 
-		res := r.Body.GetDepartureBoardResponse.GetStationBoardResult
-		for _, s := range res.TrainServices.Service {
-			hours, minutes, ok := strings.Cut(s.Std, ":")
-			if !ok {
-				return errors.New("error parsing departure time")
-			}
+		stationNames[stationCode] = page.Stop.Name
 
-			hh, _ := strconv.Atoi(hours)
-			mm, _ := strconv.Atoi(minutes)
+		for _, s := range page.Departures {
+			hh := s.Due.Hour()
 
-			// If we're past midday and the departure hour is less than 12 that means it's an after midnight 
-			// time, because all departures are in the future. Add 24 to ensure the hour will slot in in the 
-			// correct position when sorting. This only affects the sorting order, not the displayed time.
 			if currentHour > 12 && hh < 12 {
 				hh += 24
 			}
 
 			results = append(results,
 				Departure{
-					SortBy:      hh*60 + mm,
-					Departure:   fmt.Sprintf("%s %s %-20s %3s %9s", s.Std, stationCode, s.Destination.Location.LocationName, s.Platform, s.Etd),
-					Due:         s.Std,
-					Platform:    s.Platform,
-					Etd:         s.Etd,
-					Destination: s.Destination.Location.LocationName,
+					SortBy: hh*60 + s.Due.Minute(),
+					Departure: fmt.Sprintf("%-5s %3s %-37s %9s",
+						fmt.Sprintf("%02d:%02d", s.Due.Hour(), s.Due.Minute()), s.Service, s.Destination, stringifyEtd(s.Etd, s.Due)),
+					Due:         fmt.Sprintf("%02d:%02d", s.Due.Hour(), s.Due.Minute()),
+					Etd:         stringifyEtd(s.Etd, s.Due),
+					Destination: s.Destination,
+					Service:     s.Service,
 					Station:     stationCode,
 				})
 		}
@@ -126,9 +121,9 @@ func mainWithErr(out io.Writer) error {
 
 	if len(results) == 0 {
 		if *jsonOut {
-			return jsonOutput(out, []Departure{})
+			return jsonOutput(out, []Departure{}, map[string]string{})
 		} else {
-			io.WriteString(out, "no departures")
+			io.WriteString(out, "no departures\n")
 		}
 		return nil
 	}
@@ -138,7 +133,7 @@ func mainWithErr(out io.Writer) error {
 	}
 
 	if *jsonOut {
-		return jsonOutput(out, results[0:departures])
+		return jsonOutput(out, results[0:departures], stationNames)
 	}
 
 	plainTextOutput(out, results[0:departures])
@@ -146,24 +141,34 @@ func mainWithErr(out io.Writer) error {
 	return nil
 }
 
+func stringifyEtd(due *time.Time, compareTo *time.Time) string {
+	if due.Truncate(time.Minute).Compare(compareTo.Truncate(time.Minute)) == 0 {
+		return "On time"
+	}
+
+	return fmt.Sprintf("%02d:%02d", due.Hour(), due.Minute())
+}
+
 func plainTextOutput(out io.Writer, departures []Departure) {
-	fmt.Fprintf(out, "%-5s %s %-20s %3s %9s\n", "When", "Sta", "To", "Plt", "Expected")
+	fmt.Fprintf(out, "%-5s %-3s %-37s %9s\n", "When", "Srv", "To", "Expected")
 	for _, d := range departures {
 		fmt.Fprintln(out, d.Departure)
 	}
 }
 
-func jsonOutput(out io.Writer, departures []Departure) error {
+func jsonOutput(out io.Writer, departures []Departure, names map[string]string) error {
 	page := struct {
 		Offset     int            `json:"offset"`
 		Stations   map[string]int `json:"stations"`
 		Departures []Departure    `json:"departures"`
+		Names      [][]string     `json:"names"`
 	}{
 		Offset:     *optOffset,
 		Stations:   map[string]int{},
 		Departures: departures,
 	}
 
+	// set all stations to 0 so that all stations are present in the export
 	for _, s := range stations {
 		page.Stations[s] = 0
 	}
@@ -171,6 +176,15 @@ func jsonOutput(out io.Writer, departures []Departure) error {
 	for _, d := range departures {
 		page.Stations[d.Station]++
 	}
+
+	page.Names = make([][]string, 0)
+	for k, n := range names {
+		page.Names = append(page.Names, []string{k, n})
+	}
+
+	sort.Slice(page.Names, func(a, b int) bool {
+		return page.Names[a][1] < page.Names[b][1]
+	})
 
 	j, err := json.Marshal(page)
 	if err != nil {
