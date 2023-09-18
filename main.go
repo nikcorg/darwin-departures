@@ -142,7 +142,7 @@ func mainWithErr(out io.Writer) error {
 }
 
 func stringifyEtd(due *time.Time, compareTo *time.Time) string {
-	if due.Round(time.Minute).Compare(compareTo.Round(time.Minute)) == 0 {
+	if due.Truncate(time.Minute).Compare(compareTo.Truncate(time.Minute)) == 0 {
 		return "On time"
 	}
 
