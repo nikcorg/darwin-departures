@@ -64,10 +64,12 @@ func mainWithErr(out io.Writer) error {
 
 	cli := hsl.New(HSLToken)
 	departures := 10
+	maxDepartures := departures * len(stations)
 	options := (&hsl.FetchOptions{}).WithRows(uint(departures))
 
 	if optRows != nil {
 		departures = *optRows
+		maxDepartures = departures * len(stations)
 		options.WithRows(uint(departures))
 	}
 	if optOffset != nil {
@@ -128,15 +130,15 @@ func mainWithErr(out io.Writer) error {
 		return nil
 	}
 
-	if len(results) < departures {
-		departures = len(results)
+	if len(results) < maxDepartures {
+		maxDepartures = len(results)
 	}
 
 	if *jsonOut {
-		return jsonOutput(out, results[0:departures], stationNames)
+		return jsonOutput(out, results[0:maxDepartures], stationNames)
 	}
 
-	plainTextOutput(out, results[0:departures])
+	plainTextOutput(out, results[0:maxDepartures])
 
 	return nil
 }
