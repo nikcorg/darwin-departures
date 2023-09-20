@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"regexp"
 	"time"
 )
 
@@ -102,7 +103,7 @@ func (c *Client) GetDepartures(ctx context.Context, sta string, page *DepartureP
 		rta := arrivalToTime(s.RealtimeArrival)
 
 		d.Service = s.Trip.Route.ShortName
-		d.Destination = s.Headsign
+		d.Destination = applyReplacements(s.Headsign, replacements)
 		d.Station = stop.Name
 		d.Type = fmt.Sprintf("%s", shortVehicleMode(stop.VehicleMode))
 		d.Due = sat
@@ -112,6 +113,23 @@ func (c *Client) GetDepartures(ctx context.Context, sta string, page *DepartureP
 	}
 
 	return nil
+}
+
+type replacement struct {
+	search  *regexp.Regexp
+	replace string
+}
+
+var replacements = []replacement{
+	{regexp.MustCompile(`Rautatientori`), "Rautatient."},
+	{regexp.MustCompile(`Sörnäinen ?\(M\)`), "Sörn. (M)"},
+}
+
+func applyReplacements(s string, rs []replacement) string {
+	for _, r := range rs {
+		s = r.search.ReplaceAllString(s, r.replace)
+	}
+	return s
 }
 
 func arrivalToTime(t uint64) *time.Time {
